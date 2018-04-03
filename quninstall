@@ -1,0 +1,94 @@
+#!/bin/sh
+# QUninstall 0.99 - http://github.com/sxa555/qinstall
+# Copyright © 2005, 2018 IBM Corp.
+# Author: Stewart Addison (github @sxa555, twitter @sxaTech)
+# Licensed under the MIT license - see the LICENSE file for a copy
+
+[ `hostname` = my.qinstalls.server.com ] && echo "$USER: This is the qinstall server and you don't want to uninstall here" && exit 255
+
+PATH=$PATH:/usr/bin:/bin:/usr/openwin/bin:/usr/java/bin:/usr/j2se/bin; export PATH
+if [ -z "$QROOT" ]; then
+   if [ -r /qinstall/`basename $0` ]; then
+      QROOT=/qinstall
+   else
+      QROOT=${QROOT:-`dirname $0`}
+   fi
+   export QROOT
+fi
+
+QPARAMS="$*"
+unset QRESPFILE
+
+#################### PARSE ARGUMENTS ####################
+
+while getopts "d:" opt; do
+  case "$opt" in
+     "d") QINSTALLDIR=${OPTARG} ;;
+     "R") QRESPFILE=${OPTARG}; export QRESPFILE ;;
+  esac
+done
+shift `expr $OPTIND - 1`
+
+QPLAT=`uname`_`uname -m | tr _ -`
+[ `uname` = AIX ] && QPLAT=AIX_`uname -p`
+[ `uname` = HP-UX ] && [ `uname -m | cut -d/ -f1` = 9000 ] && QPLAT=HP-UX_PA-RISC
+[ "$QPLAT" = "SunOS_sun4v" ] && QPLAT=SunOS_sun4u
+
+if [ $# -lt 1 ]; then
+ echo Usage: quninstall product version
+ echo product should be one of: `echo $QROOT/*/${QPLAT}_* $QROOT/*/neutral* | xargs -n1 dirname | xargs -n1 basename | uniq`
+ exit 1
+fi
+
+QPRODUCT=$1; export QPRODUCT
+QVERSION=$2; export QVERSION
+
+#################### DETERMINE DIRECTORY TO INSTALL FROM ####################
+
+# QVERSIONDIR Is the directory under the product name that we are using
+cd $QROOT/$QPRODUCT || exit 2
+# If the platform specific directory does not exist and neutral does, reset QVERSIONDIR
+if [ ! -d "$QVERSIONDIR" -a -d "neutral_`echo $QVERSION | sed 's-U-U/-'`" ]; then
+   QVERSIONDIR=neutral_`echo $QVERSION | sed 's-U-U/-'`
+else
+   QVERSIONDIR=${QPLAT}_`echo $QVERSION | sed 's-U-U/-'`
+fi
+# If a non-specific fixpack directory is specified, select the latest
+case $QVERSION in *U) QVERSIONDIR=$QVERSIONDIR`ls -1 $QVERSIONDIR | sort -n | tail -1`;; esac
+
+if [ -d $QVERSIONDIR ]; then cd $QVERSIONDIR
+else
+   echo Pick one of the following versions:
+   ls -1d * *U/* 2>/dev/null | egrep "${QPLAT}_|neutral" | tr -d / |  grep -v U\$ | awk -F_ '{print$NF}'
+   exit 3
+fi
+
+QLOCATION=`pwd`; export QLOCATION
+QINSTALLDIR=${QINSTALLDIR:-$QLOCATION}
+cd $QINSTALLDIR
+shift 2
+
+#################### START OF LOGIC TO CALL THE UNINSTALLER ####################
+
+EXECUTED=0
+SCRIPTLOCATIONS="$QLOCATION/.quninstall $QLOCATION/../$QVERSION/.quninstall $QLOCATION/../../`echo $QVERSION | sed 's/U.*/U/g'`/.quninstall"
+# Allow a script one level up ONLY if we are within a "U" fixpack directory
+[ $QVERSION != ${QVERSION%%U*} ] && SCRIPTLOCATIONS="$SCRIPTLOCATIONS $QLOCATION/../.quninstall"
+
+for SCRIPT in $SCRIPTLOCATIONS; do
+  if [ -x $SCRIPT -a $EXECUTED -eq 0 ]; then
+     echo `date +%T` : QUNINSTALL 0.99 : Executing $SCRIPT
+     LOGS=`awk -F= '/LOGFILES=/{print$2}' $SCRIPT | tr -d \" | awk '{for (x=1; x<=NF; x++) {printf " %s %02d",$x,x}}'`
+     QLOGFILE=/tmp/quninstall.${QPRODUCT}${QVERSION}.$$.log
+     $SCRIPT $* 2>&1 | tee $QLOGFILE
+     QRC=$?; EXECUTED=1
+  fi
+done
+[ $EXECUTED -eq 0 ] && echo `date +%T` : QUNINSTALL : ERROR - NO VALID .quninstall script identified for $QVERSION && echo Search list was: "$SCRIPTLOCATIONS" && exit 1
+
+if [ -d /var/log ]; then echo `date '+%D %T'` U $QRC $QPARAMS >> /var/log/qinstall.log
+else echo `date '+%D %T'` U $QRC $QPARAMS >> /var/adm/qinstall.log; fi
+
+echo QUNINSTALL complete with RC $QRC - Output is in $QLOGFILE
+[ ! -z "$LOGS" ] && echo More detailed install logs may be found in $LOGS
+exit $QRC

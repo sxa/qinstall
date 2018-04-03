@@ -1,0 +1,116 @@
+#!/bin/sh
+# QInstall 0.99 - http://github.com/sxa555/qinstall
+# Copyright © 2005, 2018 IBM Corp.
+# Author: Stewart Addison (github: sxa555, twitter @sxaTech)
+# Licensed under the MIT license - see the LICENSE file for a copy
+
+# Edit this line with the name of your qinstall server as a saftty net :-)
+[ `hostname` = my.qinstall.server.com ] && echo "$USER: This is the qinstall server and you don't want to install here" && exit 255
+
+PATH=$PATH:/usr/bin:/bin:/usr/openwin/bin:/usr/java/bin:/usr/j2se/bin; export PATH
+if [ -z "$QROOT" ]; then
+   if [ -r /qinstall/`basename $0` ]; then
+      QROOT=/qinstall
+   else
+      QROOT=${QROOT:-`dirname $0`}
+   fi
+   export QROOT
+fi
+QPARAMS="$*"
+QPREREQS=0
+unset QRESPFILE
+
+#################### PARSE ARGUMENTS ####################
+
+while getopts "pd:R:" opt; do
+  case "$opt" in
+     "d") QINSTALLDIR=${OPTARG} ;;
+     "p") QPREREQS=1; export QPREREQS ;;
+     "R") QRESPFILE=${OPTARG}; export QRESPFILE ;;
+  esac
+done
+shift `expr $OPTIND - 1`
+
+QPLAT=`uname`_`uname -m | tr _ -`
+[ `uname` = AIX   ] && QPLAT=AIX_`uname -p`
+[ `uname` = HP-UX ] && [ `uname -m | cut -d/ -f1` = 9000 ] && QPLAT=HP-UX_PA-RISC
+[ "$QPLAT" = "SunOS_sun4v" ] && QPLAT=SunOS_sun4u
+
+if [ $# -lt 1 ]; then
+ echo 'Usage: qinstall [-p] [-d LOCATION] product version'
+ echo '  -p Automatically install prerequisite products'
+ echo '  -d Install the product from directory LOCATION instead of the default'
+ echo product should be one of: `echo $QROOT/*/${QPLAT}_* $QROOT/*/neutral* | xargs -n1 dirname | xargs -n1 basename | uniq`
+ exit 1
+fi
+
+QPRODUCT=$1; export QPRODUCT
+QVERSION=$2; export QVERSION
+
+#################### DETERMINE DIRECTORY TO INSTALL FROM ####################
+
+# QVERSIONDIR Is the directory under the product name that we are using
+cd $QROOT/$QPRODUCT || exit 2
+# If the platform specific directory does not exist and neutral does, reset QVERSIONDIR
+if [ ! -d "$QVERSIONDIR" -a -d "neutral_`echo $QVERSION | sed 's-U-U/-'`" ]; then
+   QVERSIONDIR=neutral_`echo $QVERSION | sed 's-U-U/-'`
+else
+   QVERSIONDIR=${QPLAT}_`echo $QVERSION | sed 's-U-U/-'`
+fi
+
+# If a non-specific fixpack directory is specified (ends in U), select the latest by number
+case $QVERSION in *U) QVERSIONDIR=$QVERSIONDIR`ls -1 $QVERSIONDIR | sort -n | tail -1`;; esac
+
+[ ! -z "$QINSTALLDIR" ] && mkdir -p $QVERSIONDIR
+if [ -d $QVERSIONDIR ]; then cd $QVERSIONDIR
+else
+   echo Pick one of the following versions:
+   ls -1d * *U/* 2>/dev/null | egrep "${QPLAT}_|neutral" | tr -d / |  grep -v U\$ | awk -F_ '{print$NF}'
+   exit 3
+fi
+
+# QINSTALLDIR can be overrident in environment or via -d to pick alt install media
+# QLOCATION is the default if not specified and used for script location and their use
+QLOCATION=`pwd`; export QLOCATION
+QINSTALLDIR=${QINSTALLDIR:-$QLOCATION}
+
+#################### PROCESS ANY PREREQUSITES IN .qprereqs ####################
+
+QPREREQSFILE=.qprereqs
+[ ! -r $QPREREQSFILE ] && QPREREQSFILE=../$QVERSION/.qprereqs
+if [ $QPREREQS -eq 1 -a -r $QPREREQSFILE ]; then
+  cat $QPREREQSFILE | while read PREREQ; do
+    echo `date +%T` : QINSTALL : Installing prereq $PREREQ
+    cd $QROOT && $0 -p $PREREQ
+    cd $QLOCATION
+  done
+  echo `date +%T` : QINSTALL : Finished installing prereqs for $QPRODUCT $QVERSION - continuing
+fi
+ 
+[ ! -d $QINSTALLDIR ] && echo QINSTALL : Specified product directory $QINSTALLDIR does not exist - aborting && exit 1
+cd $QINSTALLDIR
+shift 2
+
+#################### START OF LOGIC TO CALL THE INSTALLER ####################
+
+EXECUTED=0
+SCRIPTLOCATIONS="$QLOCATION/.qinstall $QLOCATION/../$QVERSION/.qinstall $QLOCATION/../../`echo $QVERSION | sed 's/U.*/U/g'`/.qinstall"
+# Allow a script one level up ONLY if we are within a "U" fixpack directory
+[ $QVERSION != ${QVERSION%%U*} ] && SCRIPTLOCATIONS="$SCRIPTLOCATIONS $QLOCATION/../.qinstall"
+
+for SCRIPT in $SCRIPTLOCATIONS; do
+  if [ -x $SCRIPT -a $EXECUTED -eq 0 ]; then
+     [ "$SCRIPT" = "$QLOCATION/../.qinstall" ] && echo USE OF A DEFAULT SCRIPT AT THE TOP LEVEL IS DEPRECATED - SUPPORT WILL BE REMOVED IN 1.0\!\!\! && sleep 10
+     echo `date +%T` : QINSTALL 0.99 : Executing $SCRIPT
+     LOGS=`awk -F= '/LOGFILES=/{print$2}' $SCRIPT | tr -d \" | awk '{for (x=1; x<=NF; x++) {printf " %s %02d",$x,x}}'`
+     $SCRIPT $* 2>&1 | tee $QLOGFILE
+     QRC=$?; EXECUTED=1
+  fi
+done
+[ $EXECUTED -eq 0 ] && echo `date +%T` : QINSTALL : ERROR - NO VALID .qinstall script identified for $QVERSION && echo Search list was: "$SCRIPTLOCATIONS" && exit 1
+
+if [ -d /var/log ]; then echo `date '+%D %T'` I $QRC $QPARAMS >> /var/log/qinstall.log
+else echo `date '+%D %T'` I $QRC $QPARAMS >> /var/adm/qinstall.log; fi
+echo QINSTALL complete with RC $QRC - session log is in $QLOGFILE
+[ ! -z "$LOGS" ] && echo More detailed install logs may be found in $LOGS # `awk -F= '/LOGFILES=/{print$2}' $SCRIPT`
+exit $QRC

@@ -1,0 +1,91 @@
+#!/bin/sh
+# QIVT 0.99 - http://github.com/sxa555/qinstall
+# Copyright © 2005, 2018 IBM Corp.
+# Author: Stewart Addison (github @sxa555, twitter @sxaTech)
+# Licensed under the MIT license - see the LICENSE file for a copy
+
+[ `hostname` = my.qinstall.server.com ] && echo "$USER: This is the qinstall server and you don't want to run the IVT here" && exit 255
+
+PATH=$PATH:/usr/bin:/bin:/usr/openwin/bin:/usr/java/bin:/usr/j2se/bin; export PATH
+QPARAMS="$*"
+if [ -z "$QROOT" ]; then
+   if [ -r /qinstall/`basename $0` ]; then
+      QROOT=/qinstall
+   else
+      QROOT=${QROOT:-`dirname $0`}
+   fi
+   export QROOT
+fi
+
+#################### PARSE ARGUMENTS ####################
+
+while getopts "d:" opt; do
+  case "$opt" in
+     "d") QINSTALLDIR=${OPTARG} ;;
+  esac
+done
+shift `expr $OPTIND - 1`
+
+if [ $# -lt 1 ]; then
+ echo Usage: qivt product version
+ echo product should be one of: `echo $QROOT/*/${QPLAT}_* $QROOT/*/neutral* | xargs -n1 dirname | xargs -n1 basename | uniq`
+ exit 1
+fi
+
+QPLAT=`uname`_`uname -m | tr _ -`
+[ `uname` = AIX   ] && QPLAT=AIX_`uname -p`
+[ `uname` = HP-UX ] && [ `uname -m | cut -d/ -f1` = 9000 ] && QPLAT=HP-UX_PA-RISC
+[ "$QPLAT" = "SunOS_sun4v" ] && QPLAT=SunOS_sun4u
+
+QPRODUCT=$1; export QPRODUCT
+QVERSION=$2; export QVERSION
+
+#################### DETERMINE DIRECTORY TO INSTALL FROM ####################
+
+cd $QROOT/$QPRODUCT || exit 2
+# If the platform specific directory does not exist and neutral does, reset QVERSIONDIR
+if [ ! -d "$QVERSIONDIR" -a -d "neutral_`echo $QVERSION | sed 's-U-U/-'`" ]; then
+   QVERSIONDIR=neutral_`echo $QVERSION | sed 's-U-U/-'`
+else
+   QVERSIONDIR=${QPLAT}_`echo $QVERSION | sed 's-U-U/-'`
+fi
+
+# If a non-specifc fixpack directory is specified, select the latest
+case $QVERSION in *U) QVERSIONDIR=$QVERSIONDIR`ls -1 $QVERSIONDIR | sort -n | tail -1`;; esac
+    
+# QVERSIONDIR Is the directory under the product name that we are using
+if [ -d $QVERSIONDIR ]; then cd $QVERSIONDIR
+else
+  echo Pick one of the following versions:
+  ls -1d * *U/* 2>/dev/null | egrep "${QPLAT}_|neutral" | tr -d / |  grep -v U\$ | awk -F_ '{print$NF}'
+  exit 3
+fi
+
+QLOCATION=`pwd`; export QLOCATION
+shift 2
+
+#################### START OF LOGIC TO CALL THE IVT ####################
+
+EXECUTED=0
+SCRIPTLOCATIONS="$QLOCATION/.qivt $QLOCATION/../$QVERSION/.qivt $QLOCATION/../../`echo $QVERSION | sed 's/U.*/U/g'`/.qivt"
+# Allow a script one level up ONLY if we are within a "U" fixpack directory
+[ $QVERSION != ${QVERSION%%U*} ] && SCRIPTLOCATIONS="$SCRIPTLOCATIONS $QLOCATION/../.qivt"
+
+for SCRIPT in $SCRIPTLOCATIONS; do
+  if [ -x $SCRIPT ]; then
+     echo `date +%T` : QIVT 0.98b : Executing $SCRIPT
+     LOGS=`awk -F= '/LOGFILES=/{print$2}' $SCRIPT | tr -d \" | awk '{for (x=1; x<=NF; x++) {printf " %s %02d",$x,x}}'`
+     QLOGFILE=/tmp/qivt.${QPRODUCT}${QVERSION}.$$.log
+     $SCRIPT $* 2>&1 | tee /tmp/qivt.${QPRODUCT}${QVERSION}.$$.log
+     QRC=$?; EXECUTED=1; break
+  fi
+done
+[ $EXECUTED -eq 0 ] && echo `date +%T` : QIVT : ERROR - NO VALID .qivt script identified for $QVERSION && echo Search list was: "$SCRIPTLOCATIONS" && exit 1
+
+if [ -d /var/log ]; then echo `date '+%D %T'` V $? $QPARAMS >> /var/log/qinstall.log
+else echo `date '+%D %T'` V $? $QPARAMS >> /var/adm/qinstall.log; fi
+
+echo QUNINSTALL complete with RC $QRC - Output is in $QLOGFILE
+[ ! -z "$LOGS" ] && echo More detailed install logs may be found in $LOGS
+exit $QRC
+
