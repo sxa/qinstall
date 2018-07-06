@@ -103,6 +103,11 @@ for SCRIPT in $SCRIPTLOCATIONS; do
      [ "$SCRIPT" = "$QLOCATION/../.qinstall" ] && echo USE OF A DEFAULT SCRIPT AT THE TOP LEVEL IS DEPRECATED - SUPPORT WILL BE REMOVED IN 1.0\!\!\! && sleep 10
      echo `date +%T` : QINSTALL 0.99 : Executing $SCRIPT
      LOGS=`awk -F= '/LOGFILES=/{print$2}' $SCRIPT | tr -d \" | awk '{for (x=1; x<=NF; x++) {printf " %s %02d",$x,x}}'`
+     QLOGFILE=/tmp/qinstall.${QPRODUCT}${QVERSION}.$$.log
+     ULMCMD="java -jar $QROOT/ulm.jar /var/*/messages SL $LOGS $QLOGFILE  00"
+     if [ ! -z "$LOGS" ] && [ ! -z "$DISPLAY" ] && java -version && echo Executing $ULMCMD; then
+       xterm -geometry 128x10 -n qinstall -T "QInstall log monitoring for $QPRODUCT $QVERSION on `hostname`. Press CTL-C to quit" -e $ULMCMD &
+     fi
      $SCRIPT $* 2>&1 | tee $QLOGFILE
      QRC=$?; EXECUTED=1
   fi
