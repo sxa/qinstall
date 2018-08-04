@@ -53,15 +53,29 @@ on the github repo where you get qinstall from, others make come from elsewhere
 and working, and can act as an example of how to perform basic operations.
 * Transparent operation - you can easily see what qinstall is doing, which
 means if you have custom requirements it is easy to change
-* Hosted on the IIOSB so anyone can contribute support for new products
 
 ## Sounds great! How do I use it?
 
-You can set up your own server by extracting from the github project
-editing the top level files to point at the place you've
-extracted them to - the default is /qinstall, put the downloaded installers
-in place, then share it over NFS or another networked filesystem
-out to all your client machines.
+You can set up your own server by extracting from the github project:
+
+```
+git clone https://github.com/sxa555/qinstall
+```
+then extract the product specific scripts for the ones you wish to use - it
+doesn't extract all of them by default so as not to fill up your filesystem
+with confusing files that won't work. The ones I've written are in branches
+of the qinstall project, but these can be taken from anywhere that you store
+qinstall scripts e.g.
+```
+cd qinstall
+git clone https://github.com/sxa555/qinstall -b db2
+```
+
+Edit the top level qinstall/quninstall/qivt files to point at the place
+you've extracted them to if it was somewher other than the default location
+`/qinstall`, put the downloaded installers in place, then share it over NFS
+or another networked filesystem out to all your client machines - the ones
+you want to install products onto.
 
 As an example, if you wanted to install db2, you can query the list of
 available versions known to qinstall:
@@ -126,7 +140,7 @@ qinstall support for all platforms without having to have duplicate scripts.
 In general, such directories will not hold product code, only qinstall
 control files, although this is not required.
 
-# How do I add a new product?<
+# How do I add a new product?
 
 the best way to get started is to have a look at an existing one as an
 example.
@@ -149,8 +163,8 @@ All of these scripts are prefixed with '.' so they do not normally display
 in a directory listing. Therefore each product directory looks like the
 normal product installer. The product's own files should never be modified.
 Any sample response files should be copied (preferably into a name as
-described in the table above) before editing, and put into the IIOSB along
-with the scripts.
+described in the table above) before editing, and put into the repository
+along with the scripts.
 
 Scripts should return zero on success, or if the product is already
 installed/uninstalled, non-zero if the install failed.
@@ -166,7 +180,7 @@ not be used by your own scripts:
      during the install. Most likely used in the .qprereqs file for products
      which need to customize a prerequisite product .
 * **-k** Reserved - not yet implemented - Update kernel parameters on the OS
-* **-f** <dd> Reserved - not always implemented - Perform a full uninstall
+* **-f** Reserved - not always implemented - Perform a full uninstall
      including all user IDs etc.
 
 Once you've written the scripts for your new product, you should test them
