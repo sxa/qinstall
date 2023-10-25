@@ -1,7 +1,7 @@
 #!/bin/sh
-# QIVT 0.99 - http://github.com/sxa555/qinstall
+# QIVT 0.99a - http://github.com/sxa/qinstall
 # Copyright © 2005, 2018 IBM Corp.
-# Author: Stewart Addison (github @sxa555, twitter @sxaTech)
+# Author: Stewart Addison (github @sxa, @sxa@fosstodon.org)
 # Licensed under the MIT license - see the LICENSE file for a copy
 
 [ `hostname` = my.qinstall.server.com ] && echo "$USER: This is the qinstall server and you don't want to run the IVT here" && exit 255

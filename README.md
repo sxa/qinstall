@@ -59,7 +59,7 @@ means if you have custom requirements it is easy to change
 You can set up your own server by extracting from the github project:
 
 ```
-git clone https://github.com/sxa555/qinstall
+git clone https://github.com/sxa/qinstall
 ```
 then extract the product specific scripts for the ones you wish to use - it
 doesn't extract all of them by default so as not to fill up your filesystem
@@ -68,7 +68,7 @@ of the qinstall project, but these can be taken from anywhere that you store
 qinstall scripts e.g.
 ```
 cd qinstall
-git clone https://github.com/sxa555/qinstall -b db2
+git clone https://github.com/sxa/qinstall -b db2
 ```
 
 Edit the top level qinstall/quninstall/qivt files to point at the place
